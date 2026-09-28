@@ -32,6 +32,7 @@ bun test
 |---|---|---|
 | `OPENAI_API_KEY` | — | Your OpenAI API key (required) |
 | `OPENAI_MODEL` | `gpt-4.1-mini` | The model every request uses |
+| `OPENAI_BASE_URL` | `https://api.openai.com/v1` | Any OpenAI-compatible endpoint with vision, `logprobs` and JSON-schema `response_format` (e.g. vLLM) |
 | `RATE_LIMIT_PER_MIN` | `6` | Generates and classifies each allowed per visitor per minute (`0` turns it off) |
 | `SITE_CLASSIFY_PER_MIN` | `30` | Classifies per minute across all visitors together (`0` turns it off) |
 | `SITE_CLASSIFY_PER_DAY` | `1000` | Classifies per day across all visitors together (`0` turns it off) |

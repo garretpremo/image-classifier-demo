@@ -299,7 +299,8 @@ export function makeRoutes(opts: Options) {
 }
 
 if (import.meta.main) {
-  const upstream = 'https://api.openai.com/v1';
+  // Any OpenAI-compatible endpoint; the same variable OpenAI's own SDKs read.
+  const upstream = (process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1').replace(/\/+$/, '');
   const model = process.env.OPENAI_MODEL ?? 'gpt-4.1-mini';
   const server = Bun.serve({
     port: Number(process.env.PORT ?? 3000),
