@@ -1,0 +1,4 @@
+.env
+node_modules/
+# Deployment manifests for a specific cluster stay out of the public repo.
+deploy/

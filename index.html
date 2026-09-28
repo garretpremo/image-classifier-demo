@@ -1,0 +1,391 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>One-pass vision classifier</title>
+<link rel="icon" href="data:,">
+<style>
+  * { box-sizing: border-box; margin: 0; }
+  body {
+    height: 100vh; display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr);
+    background: #0d1017; color: #d7dae0; font: 14px/1.5 system-ui, sans-serif;
+  }
+  .pane { display: flex; flex-direction: column; min-height: 0; padding: 16px; gap: 12px; }
+  .pane + .pane { border-left: 1px solid #222734; overflow-y: auto; }
+  .bar-head { display: flex; align-items: center; gap: 10px; }
+  .bar-head h1 { font-size: 13px; font-weight: 600; letter-spacing: .04em; color: #8b93a7; flex: 1; }
+  .hint { font-size: 12px; color: #6b7386; }
+  #editor { flex: 1; min-height: 0; border: 1px solid #222734; border-radius: 8px; overflow: hidden; }
+  #editor .cm-editor { height: 100%; font-size: 13px; }
+  .viewer {
+    height: 42vh; border-radius: 8px; background: #151a24; border: 1px solid #222734;
+    display: flex; align-items: center; justify-content: center; overflow: hidden;
+  }
+  .viewer img { max-width: 100%; max-height: 100%; object-fit: contain; }
+  .caption { font-size: 12px; color: #8b93a7; min-height: 18px; }
+  .caption a { color: #7aa2f7; }
+  .buttons { display: flex; gap: 10px; }
+  button {
+    border: 0; border-radius: 6px; padding: 9px 16px; cursor: pointer; font: inherit; font-weight: 600;
+    background: #222a3a; color: #d7dae0;
+  }
+  button.primary { background: #3d59a1; color: #fff; }
+  button:disabled { opacity: .45; cursor: default; }
+  #reset, #add-question { padding: 5px 10px; font-size: 12px; font-weight: 500; }
+  dialog {
+    width: min(520px, 92vw); margin: auto; padding: 18px; border: 1px solid #222734; border-radius: 10px;
+    background: #151a24; color: #d7dae0;
+  }
+  dialog::backdrop { background: rgba(5, 7, 12, .7); }
+  dialog form { display: flex; flex-direction: column; gap: 12px; }
+  dialog h2 { font-size: 13px; font-weight: 600; letter-spacing: .04em; color: #8b93a7; }
+  dialog label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: #8b93a7; }
+  input {
+    font: 13px/1.4 ui-monospace, monospace; color: #d7dae0; background: #0d1017;
+    border: 1px solid #2a3142; border-radius: 6px; padding: 7px 9px; min-width: 0;
+  }
+  input:focus { outline: none; border-color: #3d59a1; }
+  .toggle { display: flex; gap: 0; }
+  .toggle button { border-radius: 0; padding: 6px 14px; font-size: 12px; font-weight: 500; }
+  .toggle button:first-child { border-radius: 6px 0 0 6px; }
+  .toggle button:last-child { border-radius: 0 6px 6px 0; }
+  .toggle button.on { background: #3d59a1; color: #fff; }
+  .option { display: grid; grid-template-columns: 1fr 1.6fr 28px; gap: 8px; margin-bottom: 6px; }
+  .option button { padding: 0; font-size: 16px; font-weight: 400; background: none; color: #6b7386; }
+  .option button:hover { color: #f7768e; }
+  .small { align-self: flex-start; padding: 5px 10px; font-size: 12px; font-weight: 500; }
+  .actions { display: flex; justify-content: flex-end; gap: 10px; }
+  #boolean-fields { display: flex; flex-direction: column; gap: 8px; }
+  [hidden] { display: none !important; }
+  .results { display: flex; flex-direction: column; gap: 14px; }
+  .status { font-size: 12px; color: #8b93a7; }
+  .error { color: #f7768e; white-space: pre-wrap; font: 12px/1.5 ui-monospace, monospace; }
+  .question h2 { font-size: 13px; font-weight: 600; margin-bottom: 6px; }
+  .question h2 span { font-weight: 400; color: #8b93a7; }
+  .row { display: grid; grid-template-columns: 90px 1fr 52px; align-items: center; gap: 8px; font-size: 12px; margin: 3px 0; }
+  .track { height: 14px; border-radius: 4px; background: #1b2130; overflow: hidden; }
+  .fill { height: 100%; background: #3b4261; border-radius: 4px; transition: width .4s ease; }
+  .row.picked .fill { background: #9ece6a; }
+  .row.picked .label { color: #9ece6a; font-weight: 600; }
+  .num { text-align: right; font-variant-numeric: tabular-nums; color: #8b93a7; }
+  header {
+    grid-column: 1 / -1; display: flex; align-items: center; gap: 28px; padding: 8px 16px;
+    border-bottom: 1px solid #222734; background: #11151e; font-size: 12px; color: #8b93a7;
+  }
+  header .title { font-weight: 600; letter-spacing: .04em; margin-right: auto; }
+  .meter { display: flex; align-items: center; gap: 10px; }
+  .meter .who { font-weight: 600; color: #d7dae0; }
+  .meter .track { width: 140px; height: 8px; }
+  .meter .fill { transition: width .4s ease, background-color .4s ease; }
+  .meter .num { text-align: left; white-space: nowrap; }
+  .meter .num small { font-size: 11px; color: #6b7386; }
+  #meter-site { cursor: help; }
+  pre { font: 12px/1.5 ui-monospace, monospace; background: #151a24; border: 1px solid #222734; border-radius: 6px; padding: 8px 10px; white-space: pre-wrap; }
+</style>
+</head>
+<body>
+  <header>
+    <span class="title">One-pass vision classifier</span>
+    <div class="meter" id="meter-you" title="Your classifications this minute" hidden>
+      <span class="who">You</span>
+      <div class="track"><div class="fill"></div></div>
+      <span class="num"></span>
+    </div>
+    <div class="meter" id="meter-site" title="don't ruin it for everyone" hidden>
+      <span class="who">Everyone</span>
+      <div class="track"><div class="fill"></div></div>
+      <span class="num"></span>
+    </div>
+  </header>
+
+  <section class="pane">
+    <div class="bar-head">
+      <h1>classify.js — runs in your browser when you press Classify</h1>
+      <button id="add-question" title="Add a question to the script">Add question</button>
+      <button id="reset" title="Restore the original script">Reset</button>
+    </div>
+    <div id="editor"></div>
+    <div class="hint">Edit the questions, then Classify (Ctrl/⌘+Enter). The script gets <code>image</code> and returns <code>{ answer, probs }</code>.</div>
+  </section>
+
+  <dialog id="ask">
+    <form id="ask-form" method="dialog" novalidate>
+      <h2>Add a question</h2>
+      <label>Name — becomes the field in the JSON answer
+        <input id="q-name" placeholder="e.g. animal" autocomplete="off" spellcheck="false">
+      </label>
+      <div class="toggle">
+        <button type="button" id="q-boolean" class="on">True/false</button>
+        <button type="button" id="q-choice">Choice</button>
+      </div>
+      <div id="boolean-fields">
+        <label>true means…<input id="q-true" placeholder="e.g. an animal is visible" autocomplete="off"></label>
+        <label>false means…<input id="q-false" placeholder="e.g. no animal is visible" autocomplete="off"></label>
+      </div>
+      <div id="choice-fields" hidden>
+        <div id="options"></div>
+        <button type="button" id="add-option" class="small">Add option</button>
+      </div>
+      <div class="error" id="ask-error"></div>
+      <div class="actions">
+        <button type="button" id="ask-cancel">Cancel</button>
+        <button type="submit" class="primary">Add</button>
+      </div>
+    </form>
+  </dialog>
+
+  <section class="pane">
+    <div class="viewer"><img id="img" alt=""></div>
+    <div class="caption" id="caption"></div>
+    <div class="buttons">
+      <button id="generate">Generate image</button>
+      <button id="classify" class="primary" disabled>Classify image</button>
+    </div>
+    <div class="results" id="results"></div>
+  </section>
+
+<script type="module">
+import { EditorView, basicSetup } from 'https://esm.sh/codemirror@6.0.1';
+import { keymap } from 'https://esm.sh/@codemirror/view@6';
+import { javascript } from 'https://esm.sh/@codemirror/lang-javascript@6';
+import { oneDark } from 'https://esm.sh/@codemirror/theme-one-dark@6';
+
+const $ = (id) => document.getElementById(id);
+const el = (tag, cls, text) => Object.assign(document.createElement(tag), cls ? { className: cls } : {}, text !== undefined ? { textContent: text } : {});
+const AsyncFunction = (async () => {}).constructor;
+
+const original = await (await fetch('/classify.js')).text();
+const editor = new EditorView({
+  doc: original,
+  parent: $('editor'),
+  extensions: [
+    keymap.of([{ key: 'Mod-Enter', run: () => { classify(); return true; } }]),
+    basicSetup, javascript(), oneDark, EditorView.lineWrapping,
+  ],
+});
+$('reset').onclick = () => editor.dispatch({ changes: { from: 0, to: editor.state.doc.length, insert: original } });
+
+// "Add question" writes a new entry into the script's `questions` object; the editor text is the only model.
+const NAME = /^[a-z][a-z0-9_]*$/;
+const MAX_OPTIONS = 6;
+const quote = (s) => `'${s.replace(/\\/g, '\\\\').replace(/'/g, "\\'")}'`;
+let askType = 'boolean';
+
+// Where `const questions = { … };` ends in the script, and the names it already has — or why it can't be read.
+function findQuestions() {
+  const doc = editor.state.doc.toString();
+  const start = doc.search(/^const questions\s*=\s*\{/m);
+  const end = start < 0 ? -1 : doc.indexOf('\n};', start);
+  try {
+    if (end < 0) throw new Error('not found');
+    const names = Object.keys(new Function(`return ${doc.slice(doc.indexOf('{', start), end + 2)}`)());
+    return { doc, at: end + 1, names };
+  } catch (err) {
+    return { error: `Couldn't read the questions object in the script (${err.message}). It should start with "const questions = {" and end with "};" on its own line. Fix it, or Reset.` };
+  }
+}
+
+function setType(type) {
+  askType = type;
+  $('q-boolean').classList.toggle('on', type === 'boolean');
+  $('q-choice').classList.toggle('on', type === 'choice');
+  $('boolean-fields').hidden = type !== 'boolean';
+  $('choice-fields').hidden = type !== 'choice';
+}
+
+// The first two options are always there; the rest can be removed.
+function syncOptions() {
+  const rows = [...$('options').children];
+  rows.forEach((row, i) => { row.lastChild.style.visibility = i < 2 ? 'hidden' : ''; });
+  $('add-option').disabled = rows.length >= MAX_OPTIONS;
+}
+
+function addOption() {
+  if ($('options').children.length >= MAX_OPTIONS) return;
+  const row = el('div', 'option');
+  const remove = Object.assign(el('button', '', '×'), { type: 'button', title: 'Remove this option' });
+  remove.onclick = () => { row.remove(); syncOptions(); };
+  row.append(
+    Object.assign(el('input'), { placeholder: 'option name', autocomplete: 'off', spellcheck: false }),
+    Object.assign(el('input'), { placeholder: 'description (optional)', autocomplete: 'off' }),
+    remove,
+  );
+  $('options').append(row);
+  syncOptions();
+}
+
+function openAsk() {
+  $('ask-form').reset();
+  $('options').replaceChildren();
+  addOption();
+  addOption();
+  setType('boolean');
+  $('ask-error').textContent = findQuestions().error ?? '';
+  $('ask').showModal();
+}
+
+// The new entry, formatted like the existing ones — or a message saying what's wrong with the form.
+function askEntry(names) {
+  const name = $('q-name').value.trim();
+  if (!NAME.test(name)) return { error: 'The name must start with a lowercase letter and use only a-z, 0-9 and _ — it becomes a key of the JSON answer.' };
+  if (names.includes(name)) return { error: `There's already a question called "${name}".` };
+  if (askType === 'boolean') {
+    return { line: `  ${name}: { type: 'boolean', true: ${quote($('q-true').value.trim())}, false: ${quote($('q-false').value.trim())} },` };
+  }
+  const options = [...$('options').children].map((row) => [row.children[0].value.trim(), row.children[1].value.trim()]);
+  if (options.length < 2 || options.length > MAX_OPTIONS) return { error: `A choice needs 2 to ${MAX_OPTIONS} options.` };
+  const bad = options.find(([option]) => !NAME.test(option));
+  if (bad) return { error: bad[0] ? `Option "${bad[0]}" must start with a lowercase letter and use only a-z, 0-9 and _.` : 'Every option needs a name.' };
+  const seen = {};
+  for (const [option] of options) {
+    if (seen[option[0]]) {
+      return { error: option === seen[option[0]]
+        ? `Option "${option}" is listed twice.`
+        : `"${seen[option[0]]}" and "${option}" start with the same letter. Options need different first letters: the script tells answers apart by the first token the model writes, which two such names can share.` };
+    }
+    seen[option[0]] = option;
+  }
+  const list = options.map(([option, about]) => `${option}: ${quote(about)}`).join(', ');
+  return { line: `  ${name}: { type: 'choice', options: { ${list} } },` };
+}
+
+$('ask-form').onsubmit = (e) => {
+  e.preventDefault();
+  const where = findQuestions();
+  const entry = where.error ? where : askEntry(where.names);
+  if (entry.error) { $('ask-error').textContent = entry.error; return; }
+  // The entry goes on its own line just before `};`, with a comma after the previous entry if it lacks one.
+  const before = where.doc.slice(0, where.at).trimEnd();
+  const comma = /[,{]$/.test(before) ? [] : [{ from: before.length, insert: ',' }];
+  const at = where.at + comma.length;
+  editor.dispatch({
+    changes: [...comma, { from: where.at, insert: `${entry.line}\n` }],
+    selection: { anchor: at, head: at + entry.line.length },
+    scrollIntoView: true,
+  });
+  $('ask').close();
+};
+$('add-question').onclick = openAsk;
+$('add-option').onclick = addOption;
+$('q-boolean').onclick = () => setType('boolean');
+$('q-choice').onclick = () => setType('choice');
+$('ask-cancel').onclick = () => $('ask').close();
+
+let image = null;
+
+function status(text, isError) {
+  $('results').replaceChildren(el('div', isError ? 'error' : 'status', text));
+}
+
+async function generate() {
+  $('generate').disabled = true;
+  status('Fetching a random picture…');
+  try {
+    const res = await fetch('/api/random-image');
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error ?? `HTTP ${res.status}`);
+    image = data.dataUrl;
+    $('img').src = image;
+    const credit = Object.assign(el('a', '', data.source), { href: data.credit, target: '_blank', rel: 'noopener' });
+    $('caption').replaceChildren(`${data.description} on `, credit);
+    $('classify').disabled = false;
+    status('Ready. Classify it.');
+  } catch (err) {
+    status(`Couldn't get a picture: ${err.message}`, true);
+  } finally {
+    $('generate').disabled = false;
+    refreshUsage();
+  }
+}
+
+async function classify() {
+  if (!image || $('classify').disabled) return;
+  $('classify').disabled = true;
+  status('Classifying — one request…');
+  const logs = [];
+  const log = (...args) => logs.push(args.map((a) => typeof a === 'string' ? a : JSON.stringify(a, null, 2)).join(' '));
+  const started = performance.now();
+  try {
+    const run = new AsyncFunction('image', 'console', editor.state.doc.toString());
+    const result = await run(image, { log, info: log, warn: log, error: log });
+    render(result, performance.now() - started, logs);
+  } catch (err) {
+    status(`${err.name}: ${err.message}`, true);
+    if (logs.length) $('results').append(el('pre', '', logs.join('\n')));
+  } finally {
+    $('classify').disabled = false;
+    refreshUsage();
+  }
+}
+
+// { answer, probs } becomes a bar per option, the model's pick highlighted; anything else is shown as JSON.
+function render(result, ms, logs) {
+  const out = [el('div', 'status', `1 request · ${(ms / 1000).toFixed(1)} s`)];
+  if (result && typeof result.probs === 'object') {
+    for (const [question, options] of Object.entries(result.probs)) {
+      const picked = String(result.answer?.[question]);
+      const box = el('div', 'question');
+      const title = el('h2', '', question + ' ');
+      title.append(el('span', '', `→ ${picked}`));
+      box.append(title);
+      for (const [option, p] of Object.entries(options)) {
+        const row = el('div', option === picked ? 'row picked' : 'row');
+        const track = el('div', 'track');
+        const fill = el('div', 'fill');
+        fill.style.width = '0%';
+        track.append(fill);
+        row.append(el('span', 'label', option), track, el('span', 'num', p.toFixed(3)));
+        box.append(row);
+        requestAnimationFrame(() => { fill.style.width = `${Math.min(100, p * 100)}%`; });
+      }
+      out.push(box);
+    }
+    out.push(el('pre', '', JSON.stringify(result.answer, null, 2)));
+  } else {
+    out.push(el('pre', '', JSON.stringify(result, null, 2) ?? String(result)));
+  }
+  if (logs.length) out.push(el('pre', '', logs.join('\n')));
+  $('results').replaceChildren(...out);
+}
+
+// The header's bars: how much of the classify limits are used, for this visitor and for everyone.
+// Green while there's room, amber past 60%, red past 85%; a limit that's off hides its bar.
+const fillColor = (f) => (f >= 0.85 ? '#f7768e' : f >= 0.6 ? '#e0af68' : '#9ece6a');
+function meter(id, u, text) {
+  const box = $(id);
+  box.hidden = !u;
+  if (!u) return;
+  const f = Math.min(1, u.used / u.limit);
+  const fill = box.querySelector('.fill');
+  fill.style.width = `${f * 100}%`;
+  fill.style.backgroundColor = fillColor(f);
+  box.querySelector('.num').replaceChildren(...text);
+}
+const full = (u) => (u.used >= u.limit && u.retryAfter ? ` · next in ${u.retryAfter}s` : '');
+async function refreshUsage() {
+  try {
+    const res = await fetch('/api/usage', { cache: 'no-store' });
+    if (!res.ok) return;
+    const { visitor, site } = await res.json();
+    const you = visitor.classify;
+    meter('meter-you', you, you ? [`${you.used} / ${you.limit} this minute${full(you)}`] : []);
+    const minute = site.classifyPerMinute, day = site.classifyPerDay;
+    // The bar tracks the minute; with that off, the day.
+    const bar = minute ?? day;
+    const text = [];
+    if (minute) text.push(`${minute.used} / ${minute.limit} this minute${full(minute)}`);
+    if (day) text.push(el('small', '', `${minute ? ' · ' : ''}${day.used} / ${day.limit} today${minute ? '' : full(day)}`));
+    meter('meter-site', bar, text);
+  } catch {}
+}
+setInterval(() => { if (document.visibilityState === 'visible') refreshUsage(); }, 5_000);
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') refreshUsage(); });
+
+$('generate').onclick = generate;
+$('classify').onclick = classify;
+generate();
+</script>
+</body>
+</html>

@@ -1,0 +1,5 @@
+.env
+.git
+deploy
+node_modules
+*.test.ts
