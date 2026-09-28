@@ -314,3 +314,18 @@ test('an unreachable or slow model answers a plain 502/504 JSON error, with no d
   expect(late.status).toBe(504);
   expect((await late.json()).error).toContain('too long');
 });
+
+test('extraBody is merged into every upstream request, over what the page sent', async () => {
+  const calls: Array<{ url: string; init?: RequestInit }> = [];
+  const routes = makeRoutes({
+    upstream: 'http://localhost:8000/v1', apiKey: 'sk-test', model: 'demo-model',
+    extraBody: { chat_template_kwargs: { enable_thinking: false } },
+    fetcher: async (url, init) => { calls.push({ url, init }); return Response.json({ ok: true }); },
+  });
+  const server = Bun.serve({ port: 0, routes });
+  servers.push(server);
+  expect((await post(`http://localhost:${server.port}`, demo)).status).toBe(200);
+  const sent = JSON.parse(calls[0]!.init!.body as string);
+  expect(sent.chat_template_kwargs).toEqual({ enable_thinking: false });
+  expect(sent.model).toBe('demo-model');
+});

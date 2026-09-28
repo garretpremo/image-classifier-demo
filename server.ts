@@ -60,6 +60,11 @@ export interface Options {
   apiKey?: string;
   /** Every request uses this model, whatever the page's script asks for. */
   model: string;
+  /**
+   * Fields the server adds to every upstream request, over whatever the page sent — for
+   * endpoint-specific switches the page shouldn't have to know (OPENAI_EXTRA_BODY, JSON).
+   */
+  extraBody?: Record<string, unknown>;
   fetcher?: Fetcher;
   /** Generates and classifies each allowed per visitor per minute; 0 turns limiting off. */
   ratePerMinute?: number;
@@ -277,7 +282,7 @@ export function makeRoutes(opts: Options) {
               'Content-Type': 'application/json',
               Authorization: `Bearer ${opts.apiKey}`,
             },
-            body: JSON.stringify(pinRequest(body as Record<string, unknown>, opts.model)),
+            body: JSON.stringify({ ...pinRequest(body as Record<string, unknown>, opts.model), ...opts.extraBody }),
             signal: AbortSignal.timeout(120_000),
           });
         } catch (err) {
@@ -315,6 +320,7 @@ if (import.meta.main) {
       upstream,
       model,
       apiKey: process.env.OPENAI_API_KEY,
+      extraBody: process.env.OPENAI_EXTRA_BODY ? JSON.parse(process.env.OPENAI_EXTRA_BODY) : undefined,
       ratePerMinute: Number(process.env.RATE_LIMIT_PER_MIN ?? 6),
       clientIpHeader: process.env.CLIENT_IP_HEADER || undefined,
       site: {
